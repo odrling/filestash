@@ -188,9 +188,8 @@ func hls_transcode(ctx *App, res http.ResponseWriter, req *http.Request) {
 		"-vf", fmt.Sprintf("scale=-2:%d", 720),
 		"-vcodec", "libx264",
 		"-preset", "veryfast",
-		"-acodec", "aac",
-		"-ab", "128k",
-		"-ac", "2",
+		"-acodec", "libfdk_aac",
+		"-vbr", "5",
 		"-pix_fmt", "yuv420p",
 		"-x264opts", strings.Join([]string{
 			"subme=0",
