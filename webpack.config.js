@@ -76,7 +76,10 @@ const config = {
             { from: "node_modules/pdfjs-dist/build/*.js", to: "assets/vendor/" },
             { from: "node_modules/pdfjs-dist/cmaps/*", to: "assets/vendor/" },
         ]),
-        // new BundleAnalyzerPlugin()
+        new CopyWebpackPlugin([
+            { from: "node_modules/libass-wasm/dist/js/", to: "assets/vendor/libass-wasm"}
+        ]),
+        //new BundleAnalyzerPlugin()
     ],
 };
 

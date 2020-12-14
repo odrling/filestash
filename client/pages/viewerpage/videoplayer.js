@@ -29,6 +29,26 @@ export function VideoPlayer({ filename, data, path }) {
         };
     }, [data]);
 
+    useEffect(() => {
+        const subtitlesOctopusScript = document.createElement("script");
+        subtitlesOctopusScript.src =
+            "/assets/vendor/libass-wasm/subtitles-octopus.js";
+        subtitlesOctopusScript.async = true;
+        subtitlesOctopusScript.onload = subtitlesOctopusInstantiate;
+        document.head.appendChild(subtitlesOctopusScript);
+    }, []);
+
+    const subtitlesOctopusInstantiate = () => {
+        const options = {
+            video: $video.current,
+            subUrl: data.substr(0, data.lastIndexOf(".")) + ".ass",
+            workerUrl: "/assets/vendor/libass-wasm/subtitles-octopus-worker.js",
+            legacyWorkerUrl:
+                "/assets/vendor/libass-wasm/subtitles-octopus-worker-legacy.js",
+        };
+        new SubtitlesOctopus(options);
+    };
+
     return (
         <div className="component_videoplayer">
             <MenuBar title={filename} download={data} />
