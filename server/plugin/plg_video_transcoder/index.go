@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strconv"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -84,7 +84,7 @@ func init() {
 	Hooks.Register.ProcessFileContentBeforeSend(hls_playlist)
 	Hooks.Register.HttpEndpoint(func(r *mux.Router, app *App) error {
 		r.PathPrefix("/hls/hls_{segment}.ts").Handler(NewMiddlewareChain(
-			hls_transcode,
+			get_transcoded_segment,
 			[]Middleware{SecureHeaders},
 			*app,
 		)).Methods("GET")
@@ -135,7 +135,10 @@ func hls_playlist(reader io.ReadCloser, ctx *App, res *http.ResponseWriter, req 
 	io.Copy(f, reader)
 	reader.Close()
 	f.Close()
-	time.AfterFunc(CLEAR_CACHE_AFTER*time.Hour, func() { os.Remove(cachePath) })
+
+	go hls_transcode(cachePath)
+
+	time.AfterFunc(CLEAR_CACHE_AFTER * time.Hour, func() { os.Remove(cachePath) })
 
 	p, err := ffprobe(cachePath)
 	if err != nil {
@@ -162,14 +165,30 @@ func hls_playlist(reader io.ReadCloser, ctx *App, res *http.ResponseWriter, req 
 	return NewReadCloserFromBytes([]byte(response)), nil
 }
 
-func hls_transcode(ctx *App, res http.ResponseWriter, req *http.Request) {
-	segmentNumber, err := strconv.Atoi(mux.Vars(req)["segment"])
-	if err != nil {
-		Log.Info("[plugin hls] invalid segment request '%s'", mux.Vars(req)["segment"])
-		res.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	startTime := segmentNumber * HLS_SEGMENT_LENGTH
+func hls_transcode(cachePath string) {
+	cachePathFolder := cachePath + "_transcoded"
+	os.MkdirAll(cachePathFolder, os.ModePerm)
+
+	cmd := exec.Command("ffmpeg", []string{
+		"-i", cachePath,
+		"-vf", fmt.Sprintf("scale=-2:%d", 720),
+		"-vcodec", "libx264",
+		"-preset", "veryfast",
+		"-acodec", "libfdk_aac",
+		"-vbr", "5",
+		"-pix_fmt", "yuv420p",
+		"-x264opts:0", "subme=0:me_range=4:rc_lookahead=10:me=dia:no_chroma_me:8x8dct=0:partitions=none",
+		"-f", "hls",
+		"-hls_time", fmt.Sprintf("%d.00", HLS_SEGMENT_LENGTH),
+		"-hls_segment_filename", cachePathFolder + "/%03d.ts",
+		"-vsync", "2",
+		"pipe:hls.m3u8",
+	}...)
+
+	_ = cmd.Run()
+}
+
+func get_transcoded_segment(ctx *App, res http.ResponseWriter, req *http.Request) {
 	cachePath := GetAbsolutePath(
 		VideoCachePath,
 		req.URL.Query().Get("path"),
@@ -180,44 +199,19 @@ func hls_transcode(ctx *App, res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	cmd := exec.Command("ffmpeg", []string{
-		"-timelimit", "30",
-		"-ss", fmt.Sprintf("%d.00", startTime),
-		"-i", cachePath,
-		"-t", fmt.Sprintf("%d.00", HLS_SEGMENT_LENGTH),
-		"-vf", fmt.Sprintf("scale=-2:%d", 720),
-		"-vcodec", "libx264",
-		"-preset", "veryfast",
-		"-acodec", "libfdk_aac",
-		"-vbr", "5",
-		"-pix_fmt", "yuv420p",
-		"-x264opts", strings.Join([]string{
-			"subme=0",
-			"me_range=4",
-			"rc_lookahead=10",
-			"me=dia",
-			"no_chroma_me",
-			"8x8dct=0",
-			"partitions=none",
-		}, ":"),
-		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d.000)", HLS_SEGMENT_LENGTH),
-		"-f", "ssegment",
-		"-segment_time", fmt.Sprintf("%d.00", HLS_SEGMENT_LENGTH),
-		"-segment_start_number", fmt.Sprintf("%d", segmentNumber),
-		"-initial_offset", fmt.Sprintf("%d.00", startTime),
-		"-vsync", "2",
-		"pipe:out%03d.ts",
-	}...)
+	transcodedSegmentPath := filepath.Join(
+		cachePath + "_transcoded",
+		fmt.Sprintf("%03d.ts", segmentNumber),
+	)
 
-	var str bytes.Buffer
-	cmd.Stdout = res
-	cmd.Stderr = &str
-	err = cmd.Run()
-	if err != nil {
-		Log.Error("plg_video_transcoder::ffmpeg::run '%s'", err.Error())
-	}
-	if str.String() != "" {
-		Log.Debug("plg_video_transcoder::ffmpeg::stderr %s", str.String())
+	if _, err := os.Stat(transcodedSegmentPath); err == nil {
+		f, err := os.Open(transcodedSegmentPath)
+		if err != nil {
+			Log.Info("[plugin hls]: couldn't read transcoded segment %+v", err)
+			return
+		}
+		io.Copy(res, f)
+		f.Close()
 	}
 }
 
