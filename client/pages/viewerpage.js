@@ -62,6 +62,7 @@ export function ViewerPageComponent({ error, subscribe, unsubscribe, match, loca
         isSaving: false,
         loading: false,
         application_arguments: null,
+        subtitlesTrack: null,
     });
     const path = currentUrl.replace("/view", "").replace(/%23/g, "#") + (location.hash || "");
     const filename = Path.basename(currentUrl.replace("/view", "")) || "untitled.dat";
@@ -107,6 +108,43 @@ export function ViewerPageComponent({ error, subscribe, unsubscribe, match, loca
         };
 
         const data_fetch = (app) => {
+            if (app === "video") {
+                const currentDirectory = state.path.substr(
+                    0,
+                    state.path.lastIndexOf("/") + 1
+                );
+                const videoFileWithoutExt = state.filename.substr(
+                    0,
+                    state.filename.lastIndexOf(".")
+                );
+                const subtitlesTracks = [
+                    videoFileWithoutExt + ".ssa",
+                    videoFileWithoutExt + ".ass",
+                ];
+                var searchPromises = [];
+                for (const subtitlesTrack of subtitlesTracks) {
+                    searchPromises.push(
+                        Files.search(subtitlesTrack, currentDirectory)
+                    );
+                }
+                return Promise.all(searchPromises).then((allSearchResults) => {
+                    for (const searchResults of allSearchResults) {
+                        if (
+                            Array.isArray(searchResults) &&
+                            searchResults.length > 0
+                        ) {
+                            Files.url(searchResults[0].path).then(
+                                (subtitlesTrackUrl) => {
+                                    setState({
+                                        subtitlesTrack: subtitlesTrackUrl,
+                                        loading: false,
+                                    });
+                                }
+                            );
+                        }
+                    }
+                });
+            }
             if (app !== "editor" && app !== "form") {
                 setState({ loading: false });
                 return null;
@@ -172,7 +210,8 @@ export function ViewerPageComponent({ error, subscribe, unsubscribe, match, loca
                         <VideoPlayer
                             data={state.url}
                             filename={filename}
-                            path={path} />
+                            path={path}
+                            subtitlesTrack={state.subtitlesTrack} />
                     </NgIf>
                     <NgIf cond={state.opener === "form"}>
                         <FormViewer

@@ -10,7 +10,7 @@ import "videojs-contrib-hls";
 import "video.js/dist/video-js.css";
 import "./videoplayer.scss";
 
-export function VideoPlayer({ filename, data, path }) {
+export function VideoPlayer({ filename, data, path, subtitlesTrack }) {
     const $video = useRef();
     if (!window.overrides["video-map-sources"]) {
         window.overrides["video-map-sources"] = (s) => (s);
@@ -41,7 +41,7 @@ export function VideoPlayer({ filename, data, path }) {
     const subtitlesOctopusInstantiate = () => {
         const options = {
             video: $video.current,
-            subUrl: data.substr(0, data.lastIndexOf(".")) + ".ass",
+            subUrl: subtitlesTrack,
             workerUrl: "/assets/vendor/libass-wasm/subtitles-octopus-worker.js",
             legacyWorkerUrl:
                 "/assets/vendor/libass-wasm/subtitles-octopus-worker-legacy.js",
