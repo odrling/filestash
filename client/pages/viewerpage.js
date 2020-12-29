@@ -109,40 +109,32 @@ export function ViewerPageComponent({ error, subscribe, unsubscribe, match, loca
 
         const data_fetch = (app) => {
             if (app === "video") {
-                const currentDirectory = state.path.substr(
+                const currentDirectory = path.slice(
                     0,
-                    state.path.lastIndexOf("/") + 1
+                    path.lastIndexOf("/") + 1
                 );
-                const videoFileWithoutExt = state.filename.substr(
+                const videoFileWithoutExt = filename.slice(
                     0,
-                    state.filename.lastIndexOf(".")
+                    filename.lastIndexOf(".")
                 );
                 const subtitlesTracks = [
                     videoFileWithoutExt + ".ssa",
                     videoFileWithoutExt + ".ass",
                 ];
-                var searchPromises = [];
-                for (const subtitlesTrack of subtitlesTracks) {
-                    searchPromises.push(
-                        Files.search(subtitlesTrack, currentDirectory)
-                    );
-                }
-                return Promise.all(searchPromises).then((allSearchResults) => {
-                    for (const searchResults of allSearchResults) {
-                        if (
-                            Array.isArray(searchResults) &&
-                            searchResults.length > 0
-                        ) {
-                            Files.url(searchResults[0].path).then(
-                                (subtitlesTrackUrl) => {
-                                    setState({
-                                        subtitlesTrack: subtitlesTrackUrl,
-                                        loading: false,
-                                    });
-                                }
-                            );
+                const catPromises = subtitlesTracks.map((subtitlesTrack) =>
+                    Files.cat(currentDirectory + subtitlesTrack)
+                );
+                return Promise.allSettled(catPromises).then((catResults) => {
+                    for (let i = 0; i < subtitlesTracks.length; i++) {
+                        if (catResults[i].status === "fulfilled") {
+                            Files.url(
+                                currentDirectory + subtitlesTracks[i]
+                            ).then((url) => {
+                                setState({ subtitlesTrack: url });
+                            });
                         }
                     }
+                    setState({ loading: false });
                 });
             }
             if (app !== "editor" && app !== "form") {
