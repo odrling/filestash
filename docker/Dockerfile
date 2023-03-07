@@ -1,71 +1,56 @@
-# STEP1: CLONE THE CODE
-FROM alpine:latest as builder_prepare
-WORKDIR /home/
-RUN apk add git && \
-    git clone --depth 1 https://github.com/mickael-kerjean/filestash
+FROM node:13-alpine as frontend
 
-# STEP2: BUILD THE FRONTEND
-FROM node:13-alpine AS builder_frontend
-WORKDIR /home/
-COPY --from=builder_prepare /home/filestash/ ./
-RUN apk add make git && \
-    npm install --silent && \
-    make build_frontend
+COPY . /src
+RUN rm -r /src/server
+WORKDIR /src
 
-# STEP3: BUILD THE BACKEND
-FROM golang:1.19-buster AS builder_backend
-WORKDIR /home/
-COPY --from=builder_frontend /home/ ./
-RUN apt-get update > /dev/null && \
-    apt-get install -y libvips-dev curl make > /dev/null 2>&1 && \
-    make build_init && \
-    make build_backend && \
-    mkdir -p ./dist/data/state/config/ && \
-    cp config/config.json ./dist/data/state/config/config.json
+RUN apk add make git
+RUN npm i
+RUN make build_frontend
 
-# STEP4: Create the prod image from the build
+FROM golang:1.19-buster as backend
+
+ENV DEBIAN_FRONTEND noninteractive
+ENV CGO_LDFLAGS_ALLOW -fopenmp
+ENV GO111MODULE on
+
+COPY . /src
+RUN rm -r /src/client
+WORKDIR /src
+
+RUN apt-get update && apt install -y libglib2.0-dev curl make
+
+RUN make build_init
+
+# some fucking libs
+ADD https://hikari.butaishoujo.moe/b/c158f709/libresize_linux_amd64.a /src/server/plugin/plg_image_light/deps/
+ADD https://hikari.butaishoujo.moe/b/e3d99ec0/libtranscode_linux_amd64.a /src/server/plugin/plg_image_light/deps/
+
+COPY --from=frontend /src/server/ctrl/static/www /src/server/ctrl/static/www
+RUN make build_backend
+RUN timeout 1 ./dist/filestash || true
+
 FROM debian:stable-slim
-MAINTAINER mickael@kerjean.me
-COPY --from=builder_backend /home/dist/ /app/
-WORKDIR "/app"
-RUN apt-get update > /dev/null && \
-    apt-get install -y --no-install-recommends apt-utils && \
-    apt-get install -y curl emacs-nox ffmpeg zip poppler-utils > /dev/null && \
-    # org-mode: html export
-    curl https://raw.githubusercontent.com/mickael-kerjean/filestash/master/server/.assets/emacs/htmlize.el > /usr/share/emacs/site-lisp/htmlize.el && \
-    # org-mode: markdown export
-    curl https://raw.githubusercontent.com/mickael-kerjean/filestash/master/server/.assets/emacs/ox-gfm.el > /usr/share/emacs/site-lisp/ox-gfm.el && \
-    # org-mode: pdf export (with a light latex distribution)
-    cd && apt-get install -y wget perl > /dev/null && \
-    export CTAN_REPO="http://mirror.las.iastate.edu/tex-archive/systems/texlive/tlnet" && \
-    curl -sL "https://yihui.name/gh/tinytex/tools/install-unx.sh" | sh && \
-    mv ~/.TinyTeX /usr/share/tinytex && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install wasy && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install ulem && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install marvosym && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install wasysym && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install xcolor && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install listings && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install parskip && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install float && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install wrapfig && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install sectsty && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install capt-of && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install epstopdf-pkg && \
-    /usr/share/tinytex/bin/x86_64-linux/tlmgr install cm-super && \
-    ln -s /usr/share/tinytex/bin/x86_64-linux/pdflatex /usr/local/bin/pdflatex && \
-    apt-get purge -y --auto-remove perl wget && \
-    # Cleanup
-    find /usr/share/ -name 'doc' | xargs rm -rf && \
-    find /usr/share/emacs -name '*.pbm' | xargs rm -f && \
-    find /usr/share/emacs -name '*.png' | xargs rm -f && \
-    find /usr/share/emacs -name '*.xpm' | xargs rm -f
-    
-RUN useradd filestash && \
-    chown -R filestash:filestash /app/ && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm -rf /tmp/*
 
-USER filestash
-CMD ["/app/filestash"]
+RUN apt-get update && \
+    apt-get install -y libglib2.0-0 curl gnupg && \
+    apt-get install -y tor emacs zip poppler-utils
+
+RUN mkdir -p /filestash/data/state/config
+COPY --from=backend /src/dist/filestash /filestash
+COPY config /filestash/data/state/config
+
+ADD https://hikari.butaishoujo.moe/b/6833cd58/ffmpeg /usr/bin/ffmpeg
+ADD https://hikari.butaishoujo.moe/b/05bf87a9/ffprobe /usr/bin/ffprobe
+RUN chmod +x /usr/bin/ffmpeg /usr/bin/ffprobe
+
+RUN useradd filestash && \
+    chown -R filestash:filestash /filestash/
+
+#USER filestash
+
+RUN chmod -R o+rwx /filestash/data
+
 EXPOSE 8334
+
+ENTRYPOINT /filestash/filestash
