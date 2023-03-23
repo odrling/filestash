@@ -45,6 +45,9 @@ export function VideoPlayer({ filename, data, path, subtitlesTrack }) {
         const options = {
             video: $video.current,
             subUrl: subtitlesTrack,
+            availableFonts: {
+                amaranth: "/assets/fonts/Amaranth-Regular.ttf",
+            },
             workerUrl: "/assets/vendor/libass-wasm/subtitles-octopus-worker.js",
             legacyWorkerUrl:
                 "/assets/vendor/libass-wasm/subtitles-octopus-worker-legacy.js",
