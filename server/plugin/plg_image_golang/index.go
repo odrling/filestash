@@ -7,6 +7,7 @@ import (
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
+	_ "golang.org/x/image/webp"
 	"image/png"
 
 	"io"
@@ -19,6 +20,7 @@ func init() {
 	Hooks.Register.Thumbnailer("image/jpeg", thumbnailer{})
 	Hooks.Register.Thumbnailer("image/png", thumbnailer{})
 	Hooks.Register.Thumbnailer("image/gif", thumbnailer{})
+	Hooks.Register.Thumbnailer("image/webp", thumbnailer{})
 }
 
 type thumbnailer struct{}
